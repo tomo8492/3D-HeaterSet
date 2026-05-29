@@ -37,6 +37,11 @@ Private Const DEFAULT_PLANT    As String = "5501"      ' 伊勢原
 Private Const CMD_TIMEOUT      As Long = 300           ' 秒(重いビュー対策)
 Private Const CART_CAPACITY    As Long = 2             ' 1台車に載る台数
 
+' ---- ログ ---------------------------------------------------------------------
+'   True にすると処理状況を VBE の「イミディエイト ウィンドウ」(Ctrl+G)へ出力。
+'   生成SQL・接続結果(パスワードはマスク)・件数・処理時間・エラー詳細が見られる。
+Private Const DEBUG_LOG As Boolean = True
+
 ' ---- 出力列(0始まり) --------------------------------------------------------
 '   0:指図 1:DB図番 2:現工程 3:次工程開始日 4:品目コード 5:フロー名称
 '   6:前工程 7:前工程着手状況
@@ -61,6 +66,9 @@ Public Sub RunSanjigenDaisha()
 
     On Error GoTo EH
 
+    LogMsg String$(70, "=")
+    LogMsg "▼ 三次元測定 台車組み 開始"
+
     ' --- 各シートが無ければ雛形を作成 ---
     EnsureSheets
 
@@ -76,7 +84,13 @@ Public Sub RunSanjigenDaisha()
     If Len(Trim$(plant)) = 0 Then plant = DEFAULT_PLANT
     If Len(Trim$(provider)) = 0 Then provider = DEFAULT_PROVIDER
 
+    LogMsg "設定: プロバイダ=" & provider & " / データソース=" & dataSource & _
+           " / ユーザー=" & uid & " / パスワード=" & MaskPwd(pwd)
+    LogMsg "設定: スキーマ接頭辞=[" & schemaPrefix & "] / 工程名キーワード=[" & keyword & _
+           "] / プラント=" & plant
+
     If Len(Trim$(dataSource)) = 0 Then
+        LogMsg "中断: データソース未入力"
         MsgBox "シート「" & SHEET_SETTING & "」にデータソース(TNS別名 または EZConnect" & vbCrLf & _
                "例: host:1521/service)を入力してください。", vbExclamation, "設定不足"
         ThisWorkbook.Sheets(SHEET_SETTING).Activate
@@ -85,7 +99,9 @@ Public Sub RunSanjigenDaisha()
 
     ' --- 対象品番(DB図番)読み込み ---
     Set targets = ReadTargets()
+    LogMsg "対象品番: " & targets.Count & " 件 → " & JoinCollection(targets, ", ")
     If targets.Count = 0 Then
+        LogMsg "中断: 対象品番なし"
         MsgBox "シート「" & SHEET_TARGET & "」のA列に対象の DB図番 を入力してください。" & vbCrLf & _
                "(2行目以降。例: DB11048)", vbExclamation, "対象品番なし"
         ThisWorkbook.Sheets(SHEET_TARGET).Activate
@@ -95,11 +111,14 @@ Public Sub RunSanjigenDaisha()
 
     ' --- SQL 組み立て & 実行 ---
     sql = BuildSql(inList, schemaPrefix, keyword, plant)
+    LogBlock "生成SQL", sql
     Set rows = QueryRows(provider, dataSource, uid, pwd, sql)
+    LogMsg "抽出結果: " & rows.Count & " 件"
 
     If rows.Count = 0 Then
         ' 出力はクリアしておく(戻り値は使わない)
         Call WriteResults(New Collection, keyword, plant)
+        LogMsg "該当なし(0件)。処理時間 " & Format$(Timer - t0, "0.0") & " 秒"
         MsgBox "対象(三次元測定・処理前)に該当する指図はありませんでした。" & vbCrLf & _
                "工程名キーワード=「" & keyword & "」 / プラント=" & plant, _
                vbInformation, "該当なし"
@@ -111,15 +130,23 @@ Public Sub RunSanjigenDaisha()
     cartCount = WriteResults(rows, keyword, plant)
 
     ThisWorkbook.Sheets(SHEET_OUTPUT).Activate
+    LogMsg "▲ 完了: 指図 " & rows.Count & " 件 / 台車 " & cartCount & " 台 / " & _
+           Format$(Timer - t0, "0.0") & " 秒"
     MsgBox "完了しました。" & vbCrLf & _
            "対象指図: " & rows.Count & " 件 / 台車: " & cartCount & " 台" & vbCrLf & _
-           "処理時間: " & Format$(Timer - t0, "0.0") & " 秒", _
+           "処理時間: " & Format$(Timer - t0, "0.0") & " 秒" & vbCrLf & vbCrLf & _
+           "詳細ログは VBE のイミディエイト ウィンドウ(Ctrl+G)を確認してください。", _
            vbInformation, "三次元測定 台車組み"
     Exit Sub
 
 EH:
+    LogMsg "★エラー [" & Err.Number & "] " & Err.Description & _
+           IIf(Len(Err.Source) > 0, " (Source: " & Err.Source & ")", "")
+    If Len(sql) > 0 Then LogBlock "失敗時SQL", sql
     MsgBox "エラーが発生しました。" & vbCrLf & vbCrLf & _
-           "[" & Err.Number & "] " & Err.Description, vbCritical, "エラー"
+           "[" & Err.Number & "] " & Err.Description & vbCrLf & vbCrLf & _
+           "詳細は VBE のイミディエイト ウィンドウ(Ctrl+G)を確認してください。", _
+           vbCritical, "エラー"
 End Sub
 
 
@@ -200,13 +227,21 @@ Private Function QueryRows(ByVal provider As String, ByVal dataSource As String,
     If Len(uid) > 0 Then cs = cs & "User Id=" & uid & ";"
     If Len(pwd) > 0 Then cs = cs & "Password=" & pwd & ";"
 
+    Dim tc As Double: tc = Timer
+    LogMsg "接続文字列: " & MaskConn(cs)
+    LogMsg "接続中... (CommandTimeout=" & CMD_TIMEOUT & "秒)"
+
     Set conn = CreateObject("ADODB.Connection")
     conn.CommandTimeout = CMD_TIMEOUT
     conn.Open cs
+    LogMsg "接続成功 (" & Format$(Timer - tc, "0.0") & " 秒)。クエリ実行中..."
 
+    Dim tq As Double: tq = Timer
     Set rs = CreateObject("ADODB.Recordset")
     rs.Open sql, conn, 0, 1   ' adOpenForwardOnly, adLockReadOnly
+    LogMsg "クエリ実行完了 (" & Format$(Timer - tq, "0.0") & " 秒)。取得中..."
 
+    Dim n As Long: n = 0
     Do While Not rs.EOF
         Dim r() As Variant
         ReDim r(0 To FLD_COUNT - 1)
@@ -215,8 +250,16 @@ Private Function QueryRows(ByVal provider As String, ByVal dataSource As String,
             r(i) = rs.Fields(i).Value
         Next i
         out.Add r
+        n = n + 1
+        ' 先頭数件は中身もログ(動作確認用)
+        If n <= 5 Then
+            LogMsg "  行" & n & ": 指図=" & NzStr(r(0)) & " / DB図番=" & NzStr(r(1)) & _
+                   " / 現工程=" & NzStr(r(2)) & " / 次工程開始日=" & NzStr(r(3)) & _
+                   " / 前工程=" & NzStr(r(6)) & " / 前工程着手状況=" & NzStr(r(7))
+        End If
         rs.MoveNext
     Loop
+    LogMsg "取得完了: " & n & " 行 (" & Format$(Timer - tc, "0.0") & " 秒)"
 
     rs.Close
     conn.Close
@@ -302,6 +345,15 @@ Private Function WriteResults(ByVal rows As Collection, ByVal keyword As String,
         cartRows(cartNo).Add idx
         If cartFill(cartNo) >= CART_CAPACITY Then openCart.Remove db  ' 満杯→締切
     Next idx
+
+    ' 端数(1台のみ)の台車数をログ
+    Dim partial As Long: partial = 0
+    Dim kk As Variant
+    For Each kk In cartFill.Keys
+        If cartFill(kk) < CART_CAPACITY Then partial = partial + 1
+    Next kk
+    LogMsg "台車割当: " & nextCart & " 台 (満載 " & (nextCart - partial) & _
+           " 台 / 端数1台 " & partial & " 台)"
 
     ' --- 台車No順に出力 ---
     Dim outRow As Long: outRow = 2
@@ -505,4 +557,54 @@ Private Function SheetExists(ByVal nm As String) As Boolean
     Set sh = ThisWorkbook.Sheets(nm)
     SheetExists = Not sh Is Nothing
     On Error GoTo 0
+End Function
+
+
+'==================================================================================
+' ログ出力(イミディエイト ウィンドウ / Ctrl+G)
+'==================================================================================
+Private Sub LogMsg(ByVal msg As String)
+    If DEBUG_LOG Then Debug.Print Format$(Now, "yyyy/mm/dd hh:nn:ss") & "  " & msg
+End Sub
+
+' 複数行(SQL等)を1行ずつ出力(Debug.Print の長文切り詰め対策)
+Private Sub LogBlock(ByVal title As String, ByVal body As String)
+    If Not DEBUG_LOG Then Exit Sub
+    LogMsg title & ":"
+    Dim lines() As String, i As Long
+    lines = Split(body, vbCrLf)
+    For i = LBound(lines) To UBound(lines)
+        Debug.Print "    " & lines(i)
+    Next i
+End Sub
+
+' 接続文字列のパスワードをマスク
+Private Function MaskConn(ByVal cs As String) As String
+    Dim i As Long, j As Long
+    i = InStr(1, cs, "Password=", vbTextCompare)
+    If i = 0 Then MaskConn = cs: Exit Function
+    j = InStr(i, cs, ";")
+    If j = 0 Then j = Len(cs) + 1
+    MaskConn = Left$(cs, i + Len("Password=") - 1) & "****" & Mid$(cs, j)
+End Function
+
+' パスワードの長さだけ伏字に(空なら (空))
+Private Function MaskPwd(ByVal pwd As String) As String
+    If Len(pwd) = 0 Then
+        MaskPwd = "(空)"
+    Else
+        MaskPwd = String$(Len(pwd), "*")
+    End If
+End Function
+
+' Collection を区切り文字で連結(ログ表示用)
+Private Function JoinCollection(ByVal c As Collection, ByVal sep As String) As String
+    Dim parts() As String
+    If c.Count = 0 Then JoinCollection = "": Exit Function
+    ReDim parts(0 To c.Count - 1)
+    Dim i As Long
+    For i = 1 To c.Count
+        parts(i - 1) = CStr(c(i))
+    Next i
+    JoinCollection = Join(parts, sep)
 End Function
