@@ -15,9 +15,11 @@ Attribute VB_Name = "M_SanjigenDaisha"
 '    4) 実行_三次元測定台車組み を実行(図形ボタンに割り当て推奨)
 '
 '  ※ 文字コード注意:
-'     本ファイルは UTF-8 です。日本語環境で File>Import すると日本語が文字化け
-'     する場合があります。その場合はテキストとして開いてコードをコピーし、
-'     VBE の標準モジュールへ「貼り付け」てください(貼り付けは Unicode を保持)。
+'     本ファイル(.bas)は UTF-8 です。日本語環境で「ファイル>ファイルのインポート」
+'     を使うと VBE が Shift-JIS として読み込むため、日本語が文字化けします。
+'       ・インポートする場合 … 同梱の Shift-JIS 版 M_SanjigenDaisha_sjis.bas を使用
+'       ・コピペする場合     … 本ファイルの1行目(Attribute行)を除いて貼り付け
+'                              (クリップボード貼り付けは Unicode を保持)
 '
 '  ※ ビット数注意:
 '     OraOLEDB.Oracle (Oracle Provider for OLE DB) は Excel と同じビット数
