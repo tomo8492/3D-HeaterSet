@@ -4,6 +4,10 @@
 -- VBA(M_SanjigenDaisha.bas / BuildSql)が動的に組み立てる SQL の雛形。
 -- 単体での動作確認・調整用に同じ内容をここに置く。
 --
+-- 接続(既存の本番マクロと同一):
+--   Provider=OraOLEDB.Oracle; Data Source=LV2_PROD; User ID=LV23_NHK; Password=LV23_NHK;
+--   ※接続ユーザー=LV23_NHK のため表/ビューは無修飾で参照可({SCHEMA}は空)。
+--
 -- バインド箇所(VBA が文字列置換する):
 --   :PLANT   … プラント(例 5501)
 --   :KEYWORD … 三次元測定の工程名キーワード(例 三次元測定)
@@ -68,7 +72,7 @@ plan AS (
     WHERE 工程名 LIKE '%三次元測定%'                -- :KEYWORD (三次元測定行に限定)
 )
 SELECT
-    t.LOT_ID                 AS 指図,
+    TO_SINGLE_BYTE(t.LOT_ID) AS 指図,
     t.DB_NO                  AS DB図番,
     t.CUR_PROC               AS 現工程,
     p.着手予定日             AS 次工程開始日,

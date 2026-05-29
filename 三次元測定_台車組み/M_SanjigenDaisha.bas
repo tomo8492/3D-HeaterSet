@@ -198,7 +198,7 @@ Private Function BuildSql(ByVal inList As String, ByVal schemaPrefix As String, 
     s = s & "  WHERE 工程名 LIKE '%" & kw & "%'" & vbCrLf                ' 三次元測定行に限定
     s = s & ")" & vbCrLf
     s = s & "SELECT" & vbCrLf
-    s = s & "  t.LOT_ID                    AS 指図," & vbCrLf
+    s = s & "  TO_SINGLE_BYTE(t.LOT_ID)    AS 指図," & vbCrLf
     s = s & "  t.DB_NO                     AS DB図番," & vbCrLf
     s = s & "  t.CUR_PROC                  AS 現工程," & vbCrLf
     s = s & "  p.着手予定日                 AS 次工程開始日," & vbCrLf
@@ -226,7 +226,7 @@ Private Function QueryRows(ByVal provider As String, ByVal dataSource As String,
     Set out = New Collection
 
     cs = "Provider=" & provider & ";Data Source=" & dataSource & ";"
-    If Len(uid) > 0 Then cs = cs & "User Id=" & uid & ";"
+    If Len(uid) > 0 Then cs = cs & "User ID=" & uid & ";"
     If Len(pwd) > 0 Then cs = cs & "Password=" & pwd & ";"
 
     Dim tc As Double: tc = Timer
@@ -512,7 +512,8 @@ Private Sub EnsureSettingSheet()
     Dim items As Variant, vals As Variant
     items = Array("プロバイダ", "データソース", "ユーザーID", "パスワード", _
                   "スキーマ接頭辞", "工程名キーワード", "プラント")
-    vals = Array(DEFAULT_PROVIDER, "", "", "", "", DEFAULT_KEYWORD, DEFAULT_PLANT)
+    ' 既存の本番マクロ(指図⇒シリアル 等)と同じ接続情報を初期値として投入
+    vals = Array(DEFAULT_PROVIDER, "LV2_PROD", "LV23_NHK", "LV23_NHK", "", DEFAULT_KEYWORD, DEFAULT_PLANT)
     Dim i As Long
     For i = 0 To UBound(items)
         ws.Cells(i + 2, 1).Value = items(i)
