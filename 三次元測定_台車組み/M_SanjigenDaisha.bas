@@ -35,10 +35,13 @@ Private Const SHEET_TARGET  As String = "対象品番"
 Private Const SHEET_OUTPUT  As String = "出力"
 
 ' ---- 既定値(設定シートが空欄のときに使用) -----------------------------------
-Private Const DEFAULT_PROVIDER As String = "OraOLEDB.Oracle"
-Private Const DEFAULT_KEYWORD  As String = "三次元測定"
-Private Const DEFAULT_PLANT    As String = "5501"      ' 伊勢原
-Private Const CMD_TIMEOUT      As Long = 300           ' 秒(重いビュー対策)
+Private Const DEFAULT_PROVIDER   As String = "OraOLEDB.Oracle"
+Private Const DEFAULT_DATASOURCE As String = "LV2_PROD"     ' TNS別名(既存マクロと同一)
+Private Const DEFAULT_UID        As String = "LV23_NHK"     ' DBユーザー(既存マクロと同一)
+Private Const DEFAULT_PWD        As String = "LV23_NHK"     ' DBパスワード(既存マクロと同一)
+Private Const DEFAULT_KEYWORD    As String = "三次元測定"
+Private Const DEFAULT_PLANT      As String = "5501"      ' 伊勢原
+Private Const CMD_TIMEOUT        As Long = 300           ' 秒(重いビュー対策)
 Private Const CART_CAPACITY    As Long = 2             ' 1台車に載る台数
 
 ' ---- ログ ---------------------------------------------------------------------
@@ -78,9 +81,9 @@ Public Sub RunSanjigenDaisha()
 
     ' --- 設定読み込み ---
     provider = GetSetting("プロバイダ", DEFAULT_PROVIDER)
-    dataSource = GetSetting("データソース", "")
-    uid = GetSetting("ユーザーID", "")
-    pwd = GetSetting("パスワード", "")
+    dataSource = GetSetting("データソース", DEFAULT_DATASOURCE)
+    uid = GetSetting("ユーザーID", DEFAULT_UID)
+    pwd = GetSetting("パスワード", DEFAULT_PWD)
     schemaPrefix = GetSetting("スキーマ接頭辞", "")
     keyword = GetSetting("工程名キーワード", DEFAULT_KEYWORD)
     plant = GetSetting("プラント", DEFAULT_PLANT)
@@ -505,29 +508,58 @@ Private Sub EnsureSheets()
 End Sub
 
 Private Sub EnsureSettingSheet()
-    If SheetExists(SHEET_SETTING) Then Exit Sub
+    ' シートを作成 or 取得し、空欄の項目には既定値を補填する(自己修復)。
+    ' ※ 既存シートが空欄のままだと「データソース未入力」で中断するため、
+    '    既に作成済みでも毎回ここで空欄を埋め直す(既存の入力値は上書きしない)。
     Dim ws As Worksheet
-    Set ws = ThisWorkbook.Worksheets.Add(Before:=ThisWorkbook.Sheets(1))
-    ws.Name = SHEET_SETTING
-    ws.Range("A1").Value = "項目": ws.Range("B1").Value = "値"
-    ws.Range("A1:B1").Font.Bold = True
-    Dim items As Variant, vals As Variant
+    Dim created As Boolean
+    If SheetExists(SHEET_SETTING) Then
+        Set ws = ThisWorkbook.Sheets(SHEET_SETTING)
+    Else
+        Set ws = ThisWorkbook.Worksheets.Add(Before:=ThisWorkbook.Sheets(1))
+        ws.Name = SHEET_SETTING
+        ws.Range("A1").Value = "項目": ws.Range("B1").Value = "値"
+        ws.Range("A1:B1").Font.Bold = True
+        created = True
+    End If
+
+    ' 既存の本番マクロ(指図⇒シリアル 等)と同じ接続情報を既定値とする
+    Dim items As Variant, vals As Variant, i As Long
     items = Array("プロバイダ", "データソース", "ユーザーID", "パスワード", _
                   "スキーマ接頭辞", "工程名キーワード", "プラント")
-    ' 既存の本番マクロ(指図⇒シリアル 等)と同じ接続情報を初期値として投入
-    vals = Array(DEFAULT_PROVIDER, "LV2_PROD", "LV23_NHK", "LV23_NHK", "", DEFAULT_KEYWORD, DEFAULT_PLANT)
-    Dim i As Long
+    vals = Array(DEFAULT_PROVIDER, DEFAULT_DATASOURCE, DEFAULT_UID, DEFAULT_PWD, _
+                 "", DEFAULT_KEYWORD, DEFAULT_PLANT)
     For i = 0 To UBound(items)
-        ws.Cells(i + 2, 1).Value = items(i)
-        ws.Cells(i + 2, 2).Value = vals(i)
+        EnsureSettingRow ws, CStr(items(i)), CStr(vals(i))
     Next i
-    ws.Range("D2").Value = "■ 入力ガイド"
-    ws.Range("D3").Value = "データソース: TNS別名 または EZConnect(例 host:1521/SERVICE)"
-    ws.Range("D4").Value = "スキーマ接頭辞: 通常は空欄。必要時のみ 例 LV23_NHK. を入力"
-    ws.Range("D5").Value = "工程名キーワード: 既定は 三次元測定 (部分一致)"
-    ws.Range("D6").Value = "プラント: 伊勢原=5501 / 宮田=5401"
-    ws.Range("D2").Font.Bold = True
+
+    If created Then
+        ws.Range("D2").Value = "■ 入力ガイド"
+        ws.Range("D3").Value = "データソース: TNS別名 または EZConnect(例 host:1521/SERVICE)"
+        ws.Range("D4").Value = "スキーマ接頭辞: 通常は空欄。必要時のみ 例 LV23_NHK. を入力"
+        ws.Range("D5").Value = "工程名キーワード: 既定は 三次元測定 (部分一致)"
+        ws.Range("D6").Value = "プラント: 伊勢原=5501 / 宮田=5401"
+        ws.Range("D2").Font.Bold = True
+    End If
     ws.Columns("A:B").AutoFit
+End Sub
+
+' 設定行を確保。ラベルが無ければ追記。値セルが空のときだけ既定値を補填
+' (ユーザーが入力済みの値は上書きしない。既定値が空の項目は何もしない)
+Private Sub EnsureSettingRow(ByVal ws As Worksheet, ByVal label As String, ByVal defVal As String)
+    Dim last As Long, r As Long, rowIdx As Long
+    last = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    rowIdx = 0
+    For r = 1 To last
+        If Trim$(CStr(ws.Cells(r, 1).Value)) = label Then rowIdx = r: Exit For
+    Next r
+    If rowIdx = 0 Then
+        rowIdx = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row + 1
+        ws.Cells(rowIdx, 1).Value = label
+    End If
+    If Len(defVal) > 0 And Len(Trim$(CStr(ws.Cells(rowIdx, 2).Value))) = 0 Then
+        ws.Cells(rowIdx, 2).Value = defVal
+    End If
 End Sub
 
 Private Sub EnsureTargetSheet()
