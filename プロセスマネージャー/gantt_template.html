@@ -1,0 +1,1147 @@
+<!--
+  gantt_template.html
+  Gantt chart CSS, HTML body, and JavaScript for gantt_dialog.py.
+  Each section is extracted at module load time by _load_gantt_template().
+
+  Section markers (must stay on their own lines, exact format):
+    <!-- [SECTION_NAME] -->
+    <!-- [/SECTION_NAME] -->
+-->
+
+<!-- [GANTT_CSS] -->
+<style>
+  #gantt-root {
+    font-family: 'Segoe UI', Meiryo, sans-serif;
+    padding: 20px; max-width: 100%;
+  }
+  #gantt-title {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px; color: #333; font-size: 17px;
+  }
+  #gantt-title > span { font-weight: bold; }
+  #gantt-scroll { overflow-x: auto; padding-bottom: 4px; }
+
+  /* ── page navigation bar ── */
+  #page-nav {
+    display: flex; align-items: center; justify-content: flex-end;
+    gap: 10px; padding: 0 0 8px; font-size: 12px;
+  }
+  #page-prev, #page-next {
+    background: #f0f4ff; border: 1px solid #b0c4e8;
+    border-radius: 4px; padding: 4px 12px;
+    font-size: 12px; cursor: pointer; color: #3a5fa0;
+  }
+  #page-prev:hover, #page-next:hover { background: #dce8ff; }
+  #page-prev:disabled, #page-next:disabled { opacity: 0.4; cursor: default; }
+  #page-label  { font-weight: bold; color: #333; }
+  #page-counter { font-size: 11px; color: #999; }
+
+  /* ── header ── */
+  .gantt-hrow { display: flex; align-items: flex-end; margin-bottom: 3px; }
+  .lot-spacer  { width: var(--gantt-lot-w, 112px); flex-shrink: 0; }
+  .date-hdr {
+    width: var(--gantt-cell-w, 82px); flex-shrink: 0; margin-left: 2px;
+    text-align: center; padding: 4px 2px;
+    font-size: 11px; font-weight: bold;
+    border-radius: 4px 4px 0 0;
+  }
+  .date-hdr.wday  { background: #eef2f8; color: #555; }
+  .date-hdr.wend  { background: #f3f3f3; color: #c0c0c0; }
+  .date-hdr.today { background: #fde8e8; color: #c0392b; }
+
+  /* ── fixed / paginated separator ── */
+  .page-hdr-group, .page-group {
+    border-left: 2px solid #d0d8ec;
+    padding-left: 4px;
+  }
+
+  /* ── flow separator rows ── */
+  .flow-sep {
+    display: flex; align-items: center;
+    margin: 10px 0 3px;
+    padding: 5px 10px;
+    font-size: 12px; font-weight: bold; color: #444;
+    background: #f4f6fb;
+    border-left: 4px solid #4a90d9;
+    border-radius: 0 5px 5px 0;
+    box-sizing: border-box;
+    gap: 8px;
+  }
+  .flow-sep .flow-lot-count {
+    font-size: 10px; color: #999; font-weight: normal;
+  }
+
+  /* ── lot rows ── */
+  .lot-row { display: flex; align-items: flex-start; margin-bottom: 3px; }
+  .lot-label {
+    width: var(--gantt-lot-w, 112px); flex-shrink: 0;
+    padding: 6px 8px; border-radius: 5px;
+    display: flex; flex-direction: column; justify-content: center;
+    box-sizing: border-box;
+  }
+  .lot-label .lid  { font-size: 11px; font-weight: bold; }
+  .lot-label .lsub { font-size: 9px; color: #aaa; margin-top: 2px; }
+  .lot-indicator {
+    display: block; font-size: 9px; font-weight: bold;
+    color: #7c4dff; margin-top: 3px; min-height: 11px;
+  }
+
+  /* ── day cells ── */
+  .day-cell {
+    width: var(--gantt-cell-w, 82px); height: 88px; flex-shrink: 0;
+    margin-left: 2px; padding: 3px;
+    display: flex; flex-direction: column; gap: 2px;
+    border-radius: 4px; box-sizing: border-box;
+    overflow: hidden;
+    transition: background 0.1s, border-color 0.1s;
+  }
+  .day-cell.wday      { background: #fafafa; border: 1px solid #e0e0e0; }
+  .day-cell.wend      { background: #f5f5f5; border: 1px solid #ebebeb; }
+  .day-cell.today-col { background: #fff5f5; border: 2px dashed #e74c3c; }
+  .day-cell.drag-over { background: #cce5ff !important; border: 2px solid #4a90d9 !important; }
+  .day-cell.cell-full { background: #fffae0; border-color: #f0c040 !important; }
+
+  /* ── chips ── */
+  .process-chip {
+    border-radius: 4px; padding: 3px 5px;
+    font-size: 10px; text-align: center;
+    cursor: grab; color: white;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    user-select: none; flex-shrink: 0;
+  }
+  .process-chip.is-dragging { opacity: 0.35; }
+
+  /* ── generate button ── */
+  #generate-btn {
+    background: #4a90d9; color: white;
+    border: none; border-radius: 6px;
+    padding: 8px 22px; font-size: 13px; cursor: pointer; flex-shrink: 0;
+  }
+  #generate-btn:hover { background: #357abd; }
+
+  /* ── output floating panel ── */
+  #output-panel {
+    position: fixed; bottom: 20px; right: 20px;
+    width: 420px; max-height: 60vh; overflow-y: auto;
+    background: white; border: 1px solid #dde3ef;
+    border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.18);
+    z-index: 9100; display: none; padding: 0;
+  }
+  #output-panel-hdr {
+    position: sticky; top: 0; background: white;
+    border-bottom: 1px solid #eee; padding: 8px 12px;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 13px; font-weight: bold; cursor: move;
+  }
+  .out-close-btn {
+    background: none; border: none; font-size: 16px;
+    cursor: pointer; color: #666; line-height: 1; padding: 0 4px;
+  }
+  .out-close-btn:hover { color: #333; }
+  .out-flow-hdr {
+    font-size: 13px; font-weight: bold; margin-bottom: 8px;
+    padding-left: 8px; border-left: 3px solid #4a90d9;
+  }
+  .out-block { margin-bottom: 14px; }
+  .out-lot-lbl { font-size: 11px; font-weight: bold; margin-bottom: 4px; }
+  .out-row { display: flex; gap: 8px; align-items: flex-start; }
+  .out-ta {
+    flex: 1; font-family: Consolas, monospace; font-size: 12px;
+    border: 1px solid #ddd; border-radius: 4px;
+    padding: 6px 8px; resize: vertical; background: #f9f9f9;
+    line-height: 1.7;
+  }
+  .copy-btn {
+    background: #f0f0f0; border: 1px solid #ccc;
+    border-radius: 4px; padding: 4px 10px;
+    font-size: 11px; cursor: pointer; white-space: nowrap;
+  }
+  .copy-btn:hover { background: #e0e0e0; }
+
+  /* ── overflow cell ── */
+  .overflow-cell {
+    min-width: 100px; height: 88px;
+    overflow: hidden;
+    margin-left: 8px; padding: 3px;
+    background: #f5f0ff; border: 1px dashed #b39ddb;
+    border-radius: 4px; box-sizing: border-box;
+    display: flex; flex-direction: column; gap: 2px;
+    flex-shrink: 0; transition: height 0.2s;
+  }
+  .overflow-cell.ov-expanded { height: auto; overflow: visible; }
+  .overflow-hdr {
+    font-size: 9px; color: #9575cd; font-weight: bold;
+    padding-bottom: 2px; flex-shrink: 0;
+    border-bottom: 1px solid #d1c4e9;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .overflow-chips { display: flex; flex-direction: column; gap: 2px; }
+  .ov-hidden      { display: none !important; }
+  .overflow-expand-btn {
+    font-size: 8px; color: #7c4dff; background: none;
+    border: none; cursor: pointer; padding: 0;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .overflow-expand-btn:hover { text-decoration: underline; }
+
+  /* ── settings popover ── */
+  #settings-popover {
+    position: fixed; display: none;
+    z-index: 9100; width: 320px;
+    background: white; border: 1px solid #dde3ef;
+    border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    padding: 12px 14px;
+    box-sizing: border-box;
+  }
+  .settings-table-wrapper {
+    overflow-y: auto;
+    margin-bottom: 8px;
+  }
+  .settings-toggle {
+    margin-left: auto; flex-shrink: 0;
+    background: none; border: 1px solid #b0c4e8;
+    border-radius: 4px; padding: 2px 8px;
+    font-size: 11px; color: #3a5fa0; cursor: pointer;
+    white-space: nowrap;
+  }
+  .settings-toggle:hover { background: #dce8ff; }
+  .settings-table {
+    width: auto; border-collapse: collapse;
+    font-size: 12px; margin-bottom: 10px;
+  }
+  .settings-table th {
+    text-align: left; font-weight: bold;
+    padding: 3px 12px 3px 4px; color: #555;
+    border-bottom: 1px solid #dde3ef;
+  }
+  .settings-table td { padding: 3px 12px 3px 4px; }
+  .settings-table input[type=number] {
+    width: 60px; padding: 2px 4px;
+    border: 1px solid #ccc; border-radius: 3px;
+    font-size: 12px; text-align: right;
+  }
+  .auto-arrange-btn {
+    float: right;
+    background: #27ae60; color: white;
+    border: none; border-radius: 5px;
+    padding: 5px 16px; font-size: 12px; cursor: pointer;
+  }
+  .auto-arrange-btn:hover { background: #1e8449; }
+
+  /* ── cascade notification ── */
+  #gantt-notify {
+    position: fixed; top: 22px; left: 50%; transform: translateX(-50%);
+    background: #c0392b; color: white;
+    padding: 9px 22px; border-radius: 6px;
+    font-size: 13px; pointer-events: none;
+    opacity: 0; transition: opacity 0.3s;
+    z-index: 9999; white-space: nowrap;
+  }
+</style>
+<!-- [/GANTT_CSS] -->
+
+<!-- [GANTT_BODY] -->
+<div id="gantt-notify"></div>
+<div id="gantt-root">
+  <div id="gantt-title">
+    <span>ガントチャートで工程をシミュレーションしてリスケ依頼を生成</span>
+    <button id="generate-btn" onclick="toggleOutput()">リスケ依頼文を生成</button>
+  </div>
+  <div id="gantt-scroll"></div>
+  <div id="output-panel"></div>
+</div>
+<!-- [/GANTT_BODY] -->
+
+<!-- [GANTT_JS] -->
+/*VARS*/
+(function () {
+  'use strict';
+
+  let dragChip       = null;
+  let dragLot        = null;
+  let dragSourceCell = null;
+  let currentPage    = 0;
+  const TOTAL_PAGES  = PAGE_DATES.length;
+
+  /* ── shared settings popover ── */
+  const popover = document.createElement('div');
+  popover.id = 'settings-popover';
+  popover.dataset.flow = '';
+  document.body.appendChild(popover);
+
+  // Persists lt-select + cap-input values across flow switches: { flowId: { procName: {lt, cap} } }
+  const popoverSettings = {};
+
+  function savePopoverSettings() {
+    const fid = popover.dataset.flow;
+    if (!fid) return;
+    popoverSettings[fid] = {};
+    popover.querySelectorAll('tr[data-proc]').forEach(row => {
+      popoverSettings[fid][row.dataset.proc] = {
+        lt:  row.querySelector('.lt-select').value,
+        cap: row.querySelector('.cap-input').value,
+      };
+    });
+  }
+
+  function populatePopover(flowId) {
+    if (popover.dataset.flow === flowId) return; // preserve inputs for same flow
+    savePopoverSettings();  // snapshot current flow before rebuilding
+    const procs = FLOW_PROCESSES[flowId] || [];
+    const tbl = document.createElement('table');
+    tbl.className = 'settings-table';
+    const thead = document.createElement('thead');
+    thead.innerHTML =
+      '<tr><th>工程名</th><th>リードタイム (x/5日)</th>' +
+      '<th>日次キャパシティ (0=無制限)</th></tr>';
+    tbl.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    const saved = popoverSettings[flowId] || {};
+    procs.forEach(procName => {
+      const s   = saved[procName] || {};
+      const lt  = s.lt  || '5/5';
+      const cap = s.cap !== undefined ? s.cap : '0';
+      const tr = document.createElement('tr');
+      tr.dataset.proc = procName;
+      tr.innerHTML =
+        '<td>' + procName + '</td>' +
+        '<td><select class="lt-select">' +
+          ['1/5','2/5','3/5','4/5','5/5'].map(v =>
+            '<option value="' + v + '"' + (v === lt ? ' selected' : '') + '>' + v + '</option>'
+          ).join('') +
+        '</select></td>' +
+        '<td><input type="number" class="cap-input" value="' + cap + '" min="0"></td>';
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    const btn = document.createElement('button');
+    btn.className = 'auto-arrange-btn';
+    btn.textContent = '自動配置';
+    btn.addEventListener('click', () => autoArrange(flowId));
+    const wrapper = document.createElement('div');
+    wrapper.className = 'settings-table-wrapper';
+    wrapper.appendChild(tbl);
+    popover.innerHTML = '';
+    popover.appendChild(wrapper);
+    popover.appendChild(btn);
+  }
+
+  function closeSettingsPopover() {
+    savePopoverSettings();
+    popover.style.display = 'none';
+    popover.dataset.flow = '';
+    document.querySelectorAll('.settings-toggle').forEach(b => { b.textContent = '▼ 設定'; });
+  }
+
+  function openSettingsPopover(flowId, btn) {
+    if (popover.dataset.flow === flowId && popover.style.display !== 'none') {
+      closeSettingsPopover(); return;
+    }
+    populatePopover(flowId);
+    popover.dataset.flow = flowId;
+    const r = btn.getBoundingClientRect();
+    popover.style.top  = (r.bottom + 4) + 'px';
+    const left = Math.min(r.left, window.innerWidth - 324);
+    popover.style.left = left + 'px';
+    // Constrain table scroll area to available space below the toggle button
+    const wrapper = popover.querySelector('.settings-table-wrapper');
+    if (wrapper) {
+      const available = window.innerHeight - r.bottom - 70; // 70 = btn + padding + margin
+      wrapper.style.maxHeight = Math.max(120, available) + 'px';
+    }
+    popover.style.display = 'block';
+    document.querySelectorAll('.settings-toggle').forEach(b => {
+      b.textContent = (b.dataset.flow === flowId) ? '▲ 設定' : '▼ 設定';
+    });
+  }
+
+  document.addEventListener('mousedown', e => {
+    if (popover.style.display === 'none') return;
+    const activeBtn = document.querySelector(
+      '.settings-toggle[data-flow="' + popover.dataset.flow + '"]'
+    );
+    if (!popover.contains(e.target) && e.target !== activeBtn) {
+      closeSettingsPopover();
+    }
+  });
+
+  document.addEventListener('scroll', (e) => {
+    if (popover.style.display !== 'none' && !popover.contains(e.target)) closeSettingsPopover();
+  }, true);
+
+  function isWE(dow) { return dow >= 5; }
+  function chips(cell) { return cell.querySelectorAll('.process-chip'); }
+
+  /* ── chip factory ── */
+  function makeChip(name, color) {
+    const el = document.createElement('div');
+    el.className    = 'process-chip';
+    el.draggable    = true;
+    el.textContent  = name;
+    el.dataset.proc = name;
+    el.style.background = color;
+
+    el.addEventListener('dragstart', e => {
+      const lotId = el.closest('.lot-row').dataset.lot;
+      const cell  = el.closest('.day-cell') || el.closest('.overflow-cell');
+      dragSourceCell = cell;
+      dragLot        = lotId;
+      dragChip       = el;
+      setTimeout(() => chips(cell).forEach(c => c.classList.add('is-dragging')), 0);
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', el.dataset.proc);
+    });
+    el.addEventListener('dragend', () => {
+      document.querySelectorAll('.process-chip.is-dragging')
+              .forEach(c => c.classList.remove('is-dragging'));
+      dragChip = null; dragLot = null; dragSourceCell = null;
+    });
+    return el;
+  }
+
+  /* ── chip date lookup — searches ALL cells, including hidden pages ── */
+  function chipDate(lotId, procName) {
+    let found = null;
+    document.querySelectorAll('.day-cell[data-lot="' + lotId + '"]').forEach(cell => {
+      chips(cell).forEach(c => { if (c.dataset.proc === procName) found = cell.dataset.date; });
+    });
+    return found;
+  }
+
+  /* ── notification ── */
+  function showNotification(msg) {
+    const el = document.getElementById('gantt-notify');
+    el.textContent = msg;
+    el.style.opacity = '1';
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.style.opacity = '0'; }, 3500);
+  }
+
+  /* ── date helpers for auto-arrange ── */
+  // Local-time ISO string — avoids UTC-offset bug (toISOString() returns UTC,
+  // which can give the previous calendar day in UTC+N timezones like Japan UTC+9).
+  function _isoLocal(d) {
+    return d.getFullYear() + '-' +
+      String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0');
+  }
+
+  function addWorkdays(isoDate, n) {
+    // Advance isoDate by n business days (Mon-Fri only). n=0 returns unchanged.
+    if (n === 0) return isoDate;
+    const d = new Date(isoDate + 'T00:00:00');
+    let added = 0;
+    while (added < n) {
+      d.setDate(d.getDate() + 1);
+      const dow = d.getDay();
+      if (dow !== 0 && dow !== 6) added++;
+    }
+    return _isoLocal(d);
+  }
+
+  function adjustToBusinessDay(isoDate) {
+    // Advance to next Monday if isoDate is Saturday or Sunday.
+    const d = new Date(isoDate + 'T00:00:00');
+    while (d.getDay() === 0 || d.getDay() === 6) {
+      d.setDate(d.getDate() + 1);
+    }
+    return _isoLocal(d);
+  }
+
+  function nextBusinessDay(isoDate) { return addWorkdays(isoDate, 1); }
+
+  function findCapacitySlot(idealStart, procName, capMap, usageMap) {
+    // Return first business day >= idealStart where usage < capacity.
+    // capMap[procName] = 0 (or absent) means unlimited.
+    const maxCap = capMap[procName] || 0;
+    let tryDate = adjustToBusinessDay(idealStart);
+    if (maxCap === 0) return tryDate;
+    for (;;) {
+      const key = procName + '|' + tryDate;
+      if ((usageMap[key] || 0) < maxCap) return tryDate;
+      tryDate = nextBusinessDay(tryDate);
+    }
+  }
+
+  /* ── cascade helpers — use all DATES so cascade works across pages ── */
+  const WDAY_ISOS = DATES.filter(d => !isWE(d.dow)).map(d => d.iso);
+
+  function cellCountMap(lotId) {
+    const map = {};
+    DATES.forEach(d => { map[d.iso] = 0; });
+    document.querySelectorAll('.day-cell[data-lot="' + lotId + '"]').forEach(cell => {
+      map[cell.dataset.date] = chips(cell).length;
+    });
+    return map;
+  }
+
+  function findAvailable(anchor, dir, counts) {
+    if (dir === 'back') {
+      const cands = WDAY_ISOS.filter(d => d <= anchor && d >= TODAY);
+      for (let i = cands.length - 1; i >= 0; i--) {
+        if ((counts[cands[i]] || 0) < MAX_PER_CELL) return cands[i];
+      }
+      return null;
+    } else {
+      for (const d of WDAY_ISOS.filter(d => d >= anchor)) {
+        if ((counts[d] || 0) < MAX_PER_CELL) return d;
+      }
+      return null;
+    }
+  }
+
+  function simulateCascade(lotId, procName, targetDate) {
+    const order  = PROC_ORDER[lotId] || [];
+    const idx    = order.indexOf(procName);
+    const counts = cellCountMap(lotId);
+
+    const fromDate = chipDate(lotId, procName);
+    if (fromDate) counts[fromDate] = Math.max(0, (counts[fromDate] || 0) - 1);
+
+    const moves = [{proc: procName, toDate: targetDate}];
+    counts[targetDate] = (counts[targetDate] || 0) + 1;
+
+    // Cascade backward
+    let anchor = targetDate;
+    for (let i = idx - 1; i >= 0; i--) {
+      const d = chipDate(lotId, order[i]);
+      if (!d) continue;
+      if (d > anchor) {
+        const nd = findAvailable(anchor, 'back', counts);
+        if (!nd) return {ok: false, reason: '今日が満杯のためスケジュールできません'};
+        counts[d] = Math.max(0, (counts[d] || 0) - 1);
+        counts[nd] = (counts[nd] || 0) + 1;
+        moves.push({proc: order[i], toDate: nd});
+        anchor = nd;
+      } else { break; }
+    }
+
+    // Cascade forward
+    anchor = targetDate;
+    for (let i = idx + 1; i < order.length; i++) {
+      const d = chipDate(lotId, order[i]);
+      if (!d) continue;
+      if (d < anchor) {
+        const nd = findAvailable(anchor, 'fwd', counts);
+        if (!nd) return {ok: false, reason: '表示範囲内に配置できません'};
+        counts[d] = Math.max(0, (counts[d] || 0) - 1);
+        counts[nd] = (counts[nd] || 0) + 1;
+        moves.push({proc: order[i], toDate: nd});
+        anchor = nd;
+      } else { break; }
+    }
+    return {ok: true, moves};
+  }
+
+  /* ── page navigation ── */
+  function goToPage(p) {
+    if (p < 0 || p >= TOTAL_PAGES) return;
+    currentPage = p;
+    document.querySelectorAll('.page-group').forEach(g => {
+      g.style.display = parseInt(g.dataset.page) === p ? 'flex' : 'none';
+    });
+    document.querySelectorAll('.page-hdr-group').forEach(g => {
+      g.style.display = parseInt(g.dataset.page) === p ? 'flex' : 'none';
+    });
+    const pd = PAGE_DATES[p];
+    document.getElementById('page-label').textContent =
+      pd[0].label + ' ~ ' + pd[pd.length - 1].label;
+    document.getElementById('page-counter').textContent =
+      '(' + (p + 1) + ' / ' + TOTAL_PAGES + ')';
+    document.getElementById('page-prev').disabled = p === 0;
+    document.getElementById('page-next').disabled = p === TOTAL_PAGES - 1;
+    updateAllIndicators();
+  }
+
+  /* ── navigate to the page where moved chips landed ── */
+  function navigateToMoves(moves) {
+    const changedPages = new Set();
+    moves.forEach(m => {
+      PAGE_DATES.forEach((page, i) => {
+        if (page.some(d => d.iso === m.toDate)) changedPages.add(i);
+      });
+    });
+    changedPages.delete(currentPage);
+    if (changedPages.size > 0) goToPage(Math.min(...changedPages));
+  }
+
+  /* ── commit moves to DOM ── */
+  function commitMoves(lotId, moves) {
+    const affected = new Set();
+    moves.forEach(m => {
+      let chip = null;
+      document.querySelectorAll(
+        '.day-cell[data-lot="' + lotId + '"], .overflow-cell[data-lot="' + lotId + '"]'
+      ).forEach(cell => {
+        chips(cell).forEach(c => { if (c.dataset.proc === m.proc) chip = c; });
+      });
+      if (!chip) return;
+      const src = chip.parentElement;
+      const tgt = document.querySelector(
+        '.day-cell[data-lot="' + lotId + '"][data-date="' + m.toDate + '"]'
+      );
+      if (!tgt || src === tgt) return;
+      affected.add(src); affected.add(tgt);
+      tgt.appendChild(chip);
+    });
+    affected.forEach(c => refresh(c));
+    affected.forEach(c => sortCellChips(c));
+    updateAllIndicators();
+    navigateToMoves(moves);
+  }
+
+  /* ── row indicators — chips on non-visible pages ── */
+  function updateIndicator(lotId) {
+    const visibleIsos = new Set([
+      ...FIXED_DATES.map(d => d.iso),
+      ...PAGE_DATES[currentPage].map(d => d.iso),
+    ]);
+    let hidden = 0;
+    document.querySelectorAll('.day-cell[data-lot="' + lotId + '"]').forEach(cell => {
+      if (!visibleIsos.has(cell.dataset.date)) hidden += chips(cell).length;
+    });
+    const badge = document.querySelector(
+      '.lot-row[data-lot="' + lotId + '"] .lot-indicator'
+    );
+    if (badge) badge.textContent = hidden > 0 ? '▸' + hidden : '';
+  }
+
+  function updateAllIndicators() {
+    ALL_LOTS.forEach(lot => updateIndicator(lot.id));
+  }
+
+  /* ── resolve which chip moves based on drag direction ── */
+  function resolveChip(targetDate) {
+    const cellChips = Array.from(chips(dragSourceCell));
+    if (cellChips.length <= 1) return cellChips[0] || null;
+    if (dragSourceCell.dataset.overflow) return dragChip;
+    const order    = PROC_ORDER[dragLot] || [];
+    const backward = targetDate < dragSourceCell.dataset.date;
+    let best = cellChips[0], bestIdx = order.indexOf(cellChips[0].dataset.proc);
+    cellChips.forEach(c => {
+      const i = order.indexOf(c.dataset.proc);
+      if (backward ? i < bestIdx : i > bestIdx) { bestIdx = i; best = c; }
+    });
+    return best;
+  }
+
+  /* ── cell drop wiring ── */
+  function wireCell(cell, lotId, weekend) {
+    cell.addEventListener('dragover', e => {
+      if (!dragSourceCell || dragLot !== lotId || weekend) return;
+      if (cell === dragSourceCell) return;
+      if (chips(cell).length >= MAX_PER_CELL) return;
+      if (cell.dataset.date < TODAY) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      cell.classList.add('drag-over');
+    });
+    cell.addEventListener('dragleave', e => {
+      if (!cell.contains(e.relatedTarget)) cell.classList.remove('drag-over');
+    });
+    cell.addEventListener('drop', e => {
+      e.preventDefault();
+      cell.classList.remove('drag-over');
+      if (!dragSourceCell || dragLot !== lotId || weekend) return;
+      if (cell === dragSourceCell) return;
+      if (chips(cell).length >= MAX_PER_CELL) return;
+      if (cell.dataset.date < TODAY) return;
+      const chip = resolveChip(cell.dataset.date);
+      if (!chip) return;
+      const result = simulateCascade(dragLot, chip.dataset.proc, cell.dataset.date);
+      if (!result.ok) { showNotification(result.reason); return; }
+      commitMoves(dragLot, result.moves);
+    });
+  }
+
+  /* ── refresh day cell display ── */
+  function refresh(cell) {
+    const ovCell = cell.closest('.overflow-cell');
+    if (ovCell) { refreshOverflow(ovCell); return; }
+    const n = chips(cell).length;
+    cell.classList.toggle('cell-full', n >= MAX_PER_CELL);
+    if (n >= 5) {
+      cell.style.gap     = '1px';
+      cell.style.padding = '2px 3px';
+    } else if (n >= 4) {
+      cell.style.gap     = '1px';
+      cell.style.padding = '';
+    } else {
+      cell.style.gap     = '';
+      cell.style.padding = '';
+    }
+    chips(cell).forEach(chip => {
+      if (n <= 3)       { chip.style.fontSize = '10px'; chip.style.padding = '3px 5px'; }
+      else if (n === 4) { chip.style.fontSize = '9px';  chip.style.padding = '1px 4px'; }
+      else              { chip.style.fontSize = '8px';  chip.style.padding = '1px 3px'; }
+    });
+  }
+
+  /* ── sort chips in a cell by process order ── */
+  function sortCellChips(cell) {
+    if (cell.dataset.overflow) return;
+    const order = PROC_ORDER[cell.dataset.lot] || [];
+    Array.from(chips(cell))
+      .sort((a, b) => order.indexOf(a.dataset.proc) - order.indexOf(b.dataset.proc))
+      .forEach(c => cell.appendChild(c));
+  }
+
+  /* ── overflow cell ── */
+  const OV_MAX_VISIBLE = 10;
+
+  function refreshOverflow(cell) {
+    const allChips = Array.from(chips(cell));
+    allChips.forEach((c, i) => {
+      if (i < OV_MAX_VISIBLE) c.classList.remove('ov-hidden');
+      else                    c.classList.add('ov-hidden');
+    });
+    const btn   = cell.querySelector('.overflow-expand-btn');
+    const extra = allChips.length - OV_MAX_VISIBLE;
+    if (btn) {
+      if (extra > 0) { btn.textContent = '▾ +' + extra; btn.style.display = ''; }
+      else           { btn.style.display = 'none'; }
+    }
+  }
+
+  function buildOverflowCell(lot, overflowProcs) {
+    const cell = document.createElement('div');
+    cell.className        = 'overflow-cell';
+    cell.dataset.lot      = lot.id;
+    cell.dataset.overflow = 'true';
+
+    const hdr = document.createElement('div');
+    hdr.className = 'overflow-hdr';
+    const hdrLabel = document.createElement('span');
+    hdrLabel.textContent = '範囲外';
+    hdr.appendChild(hdrLabel);
+
+    const expandBtn = document.createElement('button');
+    expandBtn.className     = 'overflow-expand-btn';
+    expandBtn.style.display = 'none';
+    expandBtn.addEventListener('click', () => {
+      const hidden = cell.querySelectorAll('.ov-hidden');
+      if (hidden.length > 0) {
+        hidden.forEach(c => c.classList.remove('ov-hidden'));
+        cell.classList.add('ov-expanded');
+        expandBtn.textContent = '▴ 折りたたむ';
+      } else {
+        cell.classList.remove('ov-expanded');
+        refreshOverflow(cell);
+      }
+    });
+    hdr.appendChild(expandBtn);
+    cell.appendChild(hdr);
+
+    const wrap = document.createElement('div');
+    wrap.className = 'overflow-chips';
+    overflowProcs.forEach((p, i) => {
+      const chip = makeChip(p.name, lot.color);
+      chip.title = p.date;
+      if (i >= OV_MAX_VISIBLE) chip.classList.add('ov-hidden');
+      wrap.appendChild(chip);
+    });
+    cell.appendChild(wrap);
+    refreshOverflow(cell);
+    return cell;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     BUILD DOM
+  ═══════════════════════════════════════════════════════ */
+  const scroll = document.getElementById('gantt-scroll');
+
+  /* ── page nav bar ── */
+  const navBar  = document.createElement('div');
+  navBar.id     = 'page-nav';
+  const prevBtn = document.createElement('button');
+  prevBtn.id    = 'page-prev';
+  prevBtn.textContent = '◀';
+  prevBtn.addEventListener('click', () => goToPage(currentPage - 1));
+  const pageLbl = document.createElement('span');
+  pageLbl.id    = 'page-label';
+  const pageCtr = document.createElement('span');
+  pageCtr.id    = 'page-counter';
+  const nextBtn = document.createElement('button');
+  nextBtn.id    = 'page-next';
+  nextBtn.textContent = '▶';
+  nextBtn.addEventListener('click', () => goToPage(currentPage + 1));
+  navBar.appendChild(prevBtn);
+  navBar.appendChild(pageLbl);
+  navBar.appendChild(pageCtr);
+  navBar.appendChild(nextBtn);
+  scroll.appendChild(navBar);
+
+  /* ── header row ── */
+  const hrow = document.createElement('div');
+  hrow.className = 'gantt-hrow';
+  const sp = document.createElement('div');
+  sp.className = 'lot-spacer';
+  hrow.appendChild(sp);
+
+  FIXED_DATES.forEach(d => {
+    const h = document.createElement('div');
+    h.className = 'date-hdr ' +
+      (d.iso === TODAY ? 'today' : isWE(d.dow) ? 'wend' : 'wday');
+    h.innerHTML = d.label + '<br><span style="font-size:9px">' + d.dowLabel + '</span>';
+    hrow.appendChild(h);
+  });
+
+  PAGE_DATES.forEach((page, pi) => {
+    const grp = document.createElement('div');
+    grp.className    = 'page-hdr-group';
+    grp.dataset.page = pi;
+    grp.style.display = pi === 0 ? 'flex' : 'none';
+    grp.style.gap     = '2px';
+    page.forEach(d => {
+      const h = document.createElement('div');
+      h.className = 'date-hdr ' + (isWE(d.dow) ? 'wend' : 'wday');
+      h.innerHTML = d.label + '<br><span style="font-size:9px">' + d.dowLabel + '</span>';
+      grp.appendChild(h);
+    });
+    hrow.appendChild(grp);
+  });
+  scroll.appendChild(hrow);
+
+  /* ── flow groups + lot rows ── */
+  FLOWS.forEach(flow => {
+    // Flow separator header
+    const sep = document.createElement('div');
+    sep.className = 'flow-sep';
+    sep.style.borderLeftColor = flow.color;
+    sep.innerHTML =
+      '<span style="color:' + flow.color + ';font-size:14px;">■</span>' +
+      flow.label +
+      '<span class="flow-lot-count">' + flow.lots.length + ' ロット</span>';
+
+    // Toggle button for settings popover
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'settings-toggle';
+    toggleBtn.dataset.flow = flow.id;
+    toggleBtn.textContent = '▼ 設定';
+    toggleBtn.addEventListener('click', () => openSettingsPopover(flow.id, toggleBtn));
+    sep.appendChild(toggleBtn);
+    scroll.appendChild(sep);
+
+    // Lot rows for this flow
+    flow.lots.forEach(lot => {
+      // Attach color from parent flow onto lot object (used below)
+      const lotColor = flow.color;
+
+      const row = document.createElement('div');
+      row.className   = 'lot-row';
+      row.dataset.lot = lot.id;
+
+      // Label + indicator badge
+      const lbl = document.createElement('div');
+      lbl.className = 'lot-label';
+      lbl.style.background = lotColor + '18';
+      lbl.style.border     = '1px solid ' + lotColor + '55';
+      lbl.innerHTML =
+        '<div class="lid" style="color:' + lotColor + '">' + lot.id + '</div>' +
+        '<span class="lot-indicator"></span>';
+      row.appendChild(lbl);
+
+      const init       = INIT_SCHEDULE[lot.id] || [];
+      const allDateSet = new Set(DATES.map(d => d.iso));
+
+      // Fixed cells
+      FIXED_DATES.forEach(d => {
+        const we   = isWE(d.dow);
+        const cell = document.createElement('div');
+        cell.className    = 'day-cell ' +
+          (d.iso === TODAY ? 'today-col' : we ? 'wend' : 'wday');
+        cell.dataset.date = d.iso;
+        cell.dataset.lot  = lot.id;
+        init.forEach(p => { if (p.date === d.iso) cell.appendChild(makeChip(p.name, lotColor)); });
+        wireCell(cell, lot.id, we);
+        refresh(cell);
+        sortCellChips(cell);
+        row.appendChild(cell);
+      });
+
+      // Paginated page groups
+      PAGE_DATES.forEach((page, pi) => {
+        const grp = document.createElement('div');
+        grp.className    = 'page-group';
+        grp.dataset.page = pi;
+        grp.style.display = pi === 0 ? 'flex' : 'none';
+        grp.style.gap     = '2px';
+
+        page.forEach(d => {
+          const we   = isWE(d.dow);
+          const cell = document.createElement('div');
+          cell.className    = 'day-cell ' + (we ? 'wend' : 'wday');
+          cell.dataset.date = d.iso;
+          cell.dataset.lot  = lot.id;
+          init.forEach(p => { if (p.date === d.iso) cell.appendChild(makeChip(p.name, lotColor)); });
+          wireCell(cell, lot.id, we);
+          refresh(cell);
+          sortCellChips(cell);
+          grp.appendChild(cell);
+        });
+        row.appendChild(grp);
+      });
+
+      // Overflow: chips before the entire date range
+      const overflowProcs = init.filter(p => !allDateSet.has(p.date));
+      if (overflowProcs.length > 0) {
+        row.appendChild(buildOverflowCell({id: lot.id, color: lotColor}, overflowProcs));
+      }
+
+      scroll.appendChild(row);
+    });
+  });
+
+  // Boot page nav
+  goToPage(0);
+
+  /* ── auto-arrange: read panel settings, run VBA-equivalent algorithm, commit moves ── */
+  function autoArrange(flowId) {
+    if (!popover || popover.dataset.flow !== flowId) return;
+
+    // Read settings rows
+    const capMap = {};
+    const settings = [];
+    popover.querySelectorAll('tr[data-proc]').forEach(row => {
+      const name = row.dataset.proc;
+      const ltRaw = (row.querySelector('.lt-select').value || '5/5').split('/');
+      const lt    = parseInt(ltRaw[0]) / parseInt(ltRaw[1]);   // 0.2 … 1.0
+      const cap  = Math.max(0, parseInt(row.querySelector('.cap-input').value) || 0);
+      settings.push({name, lt, cap});
+      capMap[name] = cap;
+    });
+
+    // Always start from today (rescheduling to the past is meaningless)
+    const flow = FLOWS.find(f => f.id === flowId);
+    const startDate = adjustToBusinessDay(TODAY);
+
+    // Schedule lots one by one, sharing usageMap for cross-lot capacity tracking
+    const usageMap = {};
+    flow.lots.forEach(lot => {
+      const procOrder = PROC_ORDER[lot.id] || [];
+      let curDay  = startDate;
+      let curFrac = 0.0;
+      const moves = [];
+
+      // Iterate in the lot's actual process order (PROC_ORDER), not the panel union order,
+      // so that scheduling respects the real manufacturing sequence for each lot.
+      procOrder.forEach(procName => {
+        const entry = settings.find(s => s.name === procName);
+        if (!entry) return;  // process not represented in the settings panel
+        const slot = findCapacitySlot(curDay, procName, capMap, usageMap);
+        // Capacity pushed us to a later day — reset intra-day fraction for that day
+        if (slot > curDay) { curDay = slot; curFrac = 0.0; }
+        moves.push({proc: procName, toDate: slot});
+        const key = procName + '|' + slot;
+        usageMap[key] = (usageMap[key] || 0) + 1;
+        // Accumulate fractional lead time; advance to next workday when >= 1 full day
+        curFrac += entry.lt;
+        const advance = Math.floor(curFrac);
+        curFrac -= advance;
+        if (advance > 0) curDay = addWorkdays(curDay, advance);
+      });
+
+      commitMoves(lot.id, moves);
+    });
+  }
+
+  /* ── output generation ── */
+  function toggleOutput() {
+    const panel = document.getElementById('output-panel');
+    // Use === 'block' (not !== 'none') because CSS-set display:none yields
+    // panel.style.display === '' on first load, so !== 'none' would be true
+    // and the first click would close rather than open.
+    if (panel.style.display === 'block') {
+      panel.style.display = 'none';
+    } else {
+      generateOutput();
+      panel.style.display = 'block';
+    }
+  }
+  window.toggleOutput = toggleOutput;
+
+  function gatherOutput() {
+    // Returns {lot_id: reschedule_string} for all lots that have chips placed.
+    // Lots with no chips are absent from the result.
+    // Consecutive-date merging logic mirrors generateOutput().
+    const result = {};
+    FLOWS.forEach(flow => {
+      flow.lots.forEach(lot => {
+        const collected = [];
+        document.querySelectorAll('.day-cell[data-lot="' + lot.id + '"]').forEach(cell => {
+          chips(cell).forEach(c => {
+            collected.push({name: c.dataset.proc, date: cell.dataset.date});
+          });
+        });
+        // Overflow chips (before the date window) store their date in chip.title
+        document.querySelectorAll('.overflow-cell[data-lot="' + lot.id + '"]').forEach(cell => {
+          chips(cell).forEach(c => {
+            if (c.title) collected.push({name: c.dataset.proc, date: c.title});
+          });
+        });
+        if (collected.length === 0) return;
+        collected.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+        const lines = [];
+        let i = 0;
+        while (i < collected.length) {
+          const d = collected[i].date;
+          let j = i;
+          while (j + 1 < collected.length && collected[j + 1].date === d) j++;
+          const name = (i === j)
+            ? collected[i].name
+            : collected[i].name + '~' + collected[j].name;
+          lines.push(name + ' : ' + d.replace(/-/g, '/'));
+          i = j + 1;
+        }
+        lines.push('でリスケお願いします。');
+        result[lot.id] = lines.join('\n');
+      });
+    });
+    return result;
+  }
+  window.gatherOutput = gatherOutput;
+
+  function generateOutput() {
+    const panel = document.getElementById('output-panel');
+    panel.innerHTML = '';
+
+    // Sticky header
+    const hdr = document.createElement('div');
+    hdr.id = 'output-panel-hdr';
+    const hdrTitle = document.createElement('span');
+    hdrTitle.textContent = 'リスケ依頼文';
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'out-close-btn';
+    closeBtn.textContent = '×';
+    closeBtn.onclick = toggleOutput;
+    hdr.appendChild(hdrTitle);
+    hdr.appendChild(closeBtn);
+    panel.appendChild(hdr);
+
+    // Scrollable content wrapper
+    const body = document.createElement('div');
+    body.style.padding = '12px';
+    panel.appendChild(body);
+
+    FLOWS.forEach(flow => {
+      const flowSection = document.createElement('div');
+      flowSection.style.marginBottom = '20px';
+
+      const flowHdr = document.createElement('div');
+      flowHdr.className = 'out-flow-hdr';
+      flowHdr.style.borderLeftColor = flow.color;
+      flowHdr.style.color           = flow.color;
+      flowHdr.textContent = flow.label;
+      flowSection.appendChild(flowHdr);
+
+      flow.lots.forEach(lot => {
+        const collected = [];
+        document.querySelectorAll('.day-cell[data-lot="' + lot.id + '"]').forEach(cell => {
+          chips(cell).forEach(c => {
+            collected.push({name: c.dataset.proc, date: cell.dataset.date});
+          });
+        });
+        // Overflow chips (before the date window) store their date in chip.title
+        document.querySelectorAll('.overflow-cell[data-lot="' + lot.id + '"]').forEach(cell => {
+          chips(cell).forEach(c => {
+            if (c.title) collected.push({name: c.dataset.proc, date: c.title});
+          });
+        });
+        collected.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+
+        const lines = [];
+        let i = 0;
+        while (i < collected.length) {
+          const d = collected[i].date;
+          let j = i;
+          while (j + 1 < collected.length && collected[j + 1].date === d) j++;
+          const name = (i === j)
+            ? collected[i].name
+            : collected[i].name + '~' + collected[j].name;
+          lines.push(name + ' : ' + d.replace(/-/g, '/'));
+          i = j + 1;
+        }
+        lines.push('でリスケお願いします。');
+
+        const block = document.createElement('div');
+        block.className = 'out-block';
+        const lbl = document.createElement('div');
+        lbl.className    = 'out-lot-lbl';
+        lbl.style.color  = flow.color;
+        lbl.textContent  = lot.id;
+        const row = document.createElement('div');
+        row.className = 'out-row';
+        const ta = document.createElement('textarea');
+        ta.className = 'out-ta';
+        ta.value     = lines.join('\n');
+        ta.rows      = lines.length + 1;
+        ta.readOnly  = true;
+        const btn = document.createElement('button');
+        btn.className   = 'copy-btn';
+        btn.textContent = 'コピー';
+        btn.onclick = () => {
+          navigator.clipboard.writeText(ta.value);
+          btn.textContent = '✓';
+          setTimeout(() => { btn.textContent = 'コピー'; }, 1500);
+        };
+        row.appendChild(ta);
+        row.appendChild(btn);
+        block.appendChild(lbl);
+        block.appendChild(row);
+        flowSection.appendChild(block);
+      });
+
+      body.appendChild(flowSection);
+    });
+  }
+  window.generateOutput = generateOutput;
+
+  (function () {
+    const panel = document.getElementById('output-panel');
+    let dragging = false, ox, oy, startL, startT;
+    panel.addEventListener('mousedown', e => {
+      const hdr = document.getElementById('output-panel-hdr');
+      if (!hdr || !hdr.contains(e.target)) return;
+      if (e.target.classList.contains('out-close-btn')) return;
+      dragging = true;
+      const r = panel.getBoundingClientRect();
+      ox = e.clientX; oy = e.clientY;
+      startL = r.left; startT = r.top;
+      panel.style.bottom = 'auto'; panel.style.right = 'auto';
+      panel.style.left = startL + 'px'; panel.style.top = startT + 'px';
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      panel.style.left = (startL + e.clientX - ox) + 'px';
+      panel.style.top  = (startT + e.clientY - oy) + 'px';
+    });
+    document.addEventListener('mouseup', () => { dragging = false; });
+  })();
+
+  /* ── responsive cell sizing ── */
+  // Measures the scroll container and calculates an optimal cell width so all
+  // columns fit without horizontal scrolling.  Clamped to [54, 82] px.
+  // Lot-label width is kept fixed at 112 px (--gantt-lot-w default) for readability.
+  function fitToWidth() {
+    const scroll = document.getElementById('gantt-scroll');
+    const root   = document.getElementById('gantt-root');
+    if (!scroll || !root) return;
+    const avail = scroll.clientWidth;
+    if (avail < 200) return;   // element not yet laid out — retry via RAF
+    const numCols = FIXED_DATES.length + (PAGE_DATES.length ? PAGE_DATES[0].length : 0);
+    const LOT_W  = 112;        // matches --gantt-lot-w default
+    const GAP    = 2;          // margin-left applied to every cell
+    const SEP_PAD = 6;         // .page-hdr-group / .page-group border-left (2) + padding-left (4)
+    const usable = avail - LOT_W - SEP_PAD;
+    const cellW  = Math.max(54, Math.min(82, Math.floor((usable - numCols * GAP) / numCols)));
+    root.style.setProperty('--gantt-cell-w', cellW + 'px');
+  }
+
+  requestAnimationFrame(fitToWidth);
+  if (typeof ResizeObserver !== 'undefined') {
+    const _ro = new ResizeObserver(fitToWidth);
+    _ro.observe(document.getElementById('gantt-root'));
+  }
+})();
+<!-- [/GANTT_JS] -->
