@@ -16,11 +16,12 @@ Attribute VB_Name = "M_SanjigenDaisha"
 '
 '  ※ 文字コード注意:
 '     本ファイル(.bas)は UTF-8 です。日本語環境で「ファイル>ファイルのインポート」
-'     を使うと VBE が Shift-JIS として読み込むため、日本語が文字化けします。
-'     → 取り込みは「コピペ」を推奨:
-'        標準モジュールを挿入し、本ファイルの1行目(Attribute行)を除いて貼り付け
-'        (クリップボード貼り付けは Unicode を保持するため化けません)。
-'     ※ どうしても File>Import を使いたい場合は Shift-JIS 版が必要です(別途生成可)。
+'     を使うと VBE が Shift-JIS として読み込むため、UTF-8版は文字化けします。
+'     ● ファイル>ファイルのインポートで取り込む場合:
+'         → 必ず Shift-JIS 版 「M_SanjigenDaisha_sjis.bas」 を使う(化けません)
+'     ● コピー&貼り付けで取り込む場合:
+'         → 本ファイル(UTF-8)の1行目(Attribute行)を除いて貼り付け
+'     ※ 本ファイル(UTF-8)を編集したら gen_sjis.py で _sjis.bas を必ず再生成すること。
 '
 '  ※ ビット数注意:
 '     OraOLEDB.Oracle (Oracle Provider for OLE DB) は Excel と同じビット数
